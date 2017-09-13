@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 
 log = logging.getLogger(__name__)
 
@@ -7,50 +8,73 @@ def dcat_to_ckan(dcat_dict):
 
     package_dict = {}
 
-    package_dict['title'] = dcat_dict.get('title')
-    package_dict['notes'] = dcat_dict.get('description')
+    package_dict['title_translated'] = {'en': dcat_dict.get('title')}
+    package_dict['notes_translated'] = {'en': dcat_dict.get('description')}
     package_dict['url'] = dcat_dict.get('landingPage')
-
 
     package_dict['tags'] = []
     for keyword in dcat_dict.get('keyword', []):
         package_dict['tags'].append({'name': keyword})
 
     package_dict['extras'] = []
-    for key in ['issued', 'modified']:
-        package_dict['extras'].append({'key': 'dcat_{0}'.format(key), 'value': dcat_dict.get(key)})
+    bbox = dcat_dict.get('spatial','').split(',')
+    if len(bbox) == 4:
+        point_a = "["+bbox[0]+","+bbox[1]+"]"
+        point_b = "["+bbox[0]+","+bbox[3]+"]"
+        point_c = "["+bbox[2]+","+bbox[3]+"]"
+        point_d = "["+bbox[2]+","+bbox[1]+"]"
+        coordinates = "["+point_a+","+point_b+","+point_c+","+point_d+","+point_a+"]"
+        bbox_str = "{'type':'Polygon','coordinates': ["+coordinates+"]}"
+        bbox_str = bbox_str.replace("'",'"')
+        package_dict['extras'] += [{"key":"spatial", "value":bbox_str}]
 
-    package_dict['extras'].append({'key': 'guid', 'value': dcat_dict.get('identifier')})
+    package_dict['released'] = datetime.strptime(dcat_dict.get('issued'),"%Y-%m-%dT%H:%M:%S.%fZ").strftime("%Y-%m-%d")
+    package_dict['modified'] = datetime.strptime(dcat_dict.get('modified'),"%Y-%m-%dT%H:%M:%S.%fZ").strftime("%Y-%m-%d")
 
-    dcat_publisher = dcat_dict.get('publisher')
-    if isinstance(dcat_publisher, basestring):
-        package_dict['extras'].append({'key': 'dcat_publisher_name', 'value': dcat_publisher})
-    elif isinstance(dcat_publisher, dict) and dcat_publisher.get('name'):
-        package_dict['extras'].append({'key': 'dcat_publisher_name', 'value': dcat_publisher.get('name')})
-        package_dict['extras'].append({'key': 'dcat_publisher_email', 'value': dcat_publisher.get('mbox')})
+    package_dict['classification'] = 'public'
+    package_dict['open'] = 'open'
+    package_dict['publisher'] = 'Department of Innovation and Technology'
+    package_dict['license_id'] = 'odc-pddl'
+    package_dict['btype'] = 'geospatial'
 
-    package_dict['extras'].append({
-        'key': 'language',
-        'value': ','.join(dcat_dict.get('language', []))
-    })
+    contactPoint = dcat_dict.get('contactPoint','')
+    #contactPointFN = contactPoint.get('fn','Department of Innovation and Technology')
+    contactPointFN = 'GIS Team'
+    package_dict['contact_point'] = contactPointFN
+    contactPointEmail = contactPoint.get('hasEmail','opengov@cityofboston.gov').split(':')[1]
+    package_dict['contact_point_email'] = contactPointEmail
 
     package_dict['resources'] = []
-    for distribution in dcat_dict.get('distribution', []):
-        resource = {
-            'name': distribution.get('title'),
-            'description': distribution.get('description'),
-            'url': distribution.get('downloadURL') or distribution.get('accessURL'),
-            'format': distribution.get('format'),
-        }
+    format_order = ['GeoJSON','CSV','KML','ZIP','Esri REST','Web page']
+    # First add resources in desired order
+    for format in format_order:
+        for distribution in dcat_dict.get('distribution', []):
+            if distribution.get('format') == format:
+                resource = get_resource_dict(distribution)
+                package_dict['resources'].append(resource)
 
-        if distribution.get('byteSize'):
-            try:
-                resource['size'] = int(distribution.get('byteSize'))
-            except ValueError:
-                pass
-        package_dict['resources'].append(resource)
+    # Add resources with other formats
+    for distribution in dcat_dict.get('distribution', []):
+        if distribution.get('format') not in format_order:
+            resource = get_resource_dict(distribution)
+            package_dict['resources'].append(resource)
 
     return package_dict
+
+
+def get_resource_dict(distribution):
+    resource = {
+        'name': distribution.get('title'),
+        'description': distribution.get('description'),
+        'url': distribution.get('downloadURL') or distribution.get('accessURL'),
+        'format': distribution.get('format'),
+    }
+    if distribution.get('byteSize'):
+        try:
+            resource['size'] = int(distribution.get('byteSize'))
+        except ValueError:
+            pass
+    return resource
 
 
 def ckan_to_dcat(package_dict):

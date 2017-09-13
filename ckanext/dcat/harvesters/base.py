@@ -369,7 +369,7 @@ class DCATHarvester(HarvesterBase):
             return False
 
         if not package_dict.get('name'):
-            package_dict['name'] = self._get_package_name(harvest_object, package_dict['title'])
+            package_dict['name'] = self._get_package_name(harvest_object, package_dict['title_translated'].get('en'))
 
         # Allow custom harvesters to modify the package dict before creating
         # or updating the package
@@ -418,7 +418,29 @@ class DCATHarvester(HarvesterBase):
         elif status == 'change':
 
             package_dict['id'] = harvest_object.package_id
-            package_id = p.toolkit.get_action('package_update')(context, package_dict)
+            pkg_resources = package_dict.get('resources')
+            pkg_metadata = {k:package_dict[k] for k in package_dict if k != 'resources'}
+
+            context = {'model': model, 'session': model.Session, 'user': self._get_user_name(), 'return_id_only': True }
+
+            existing_package_dict = p.toolkit.get_action('package_show')(context, {'id':harvest_object.package_id})
+            existing_resources = existing_package_dict.get('resources')
+            for resource in pkg_resources:
+                create_res = True
+                for existing_res in existing_resources:
+                    try:
+                        if resource.get('name').lower() == existing_res.get('name','').lower():
+                            if resource.get('format').lower().replace('web page','html') == existing_res.get('format','').lower():
+                                resource['id'] = existing_res['id']
+                                resource_id = p.toolkit.get_action('resource_update')(context, resource)
+                                create_res = False
+                    except:
+                        pass
+                if create_res:
+                    resource['package_id'] = harvest_object.package_id
+                    resource_id = p.toolkit.get_action('resource_create')(context, resource)
+
+            package_id = p.toolkit.get_action('package_patch')(context, pkg_metadata)
             log.info('Updated dataset with id %s', package_id)
 
         model.Session.commit()
