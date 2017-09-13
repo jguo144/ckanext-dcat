@@ -9,6 +9,8 @@ from ckan import plugins as p
 from ckan import logic
 from ckan import model
 
+from ckan.logic import ValidationError, NotFound, get_action
+from ckan.lib.helpers import json
 
 from ckanext.harvest.harvesters import HarvesterBase
 from ckanext.harvest.model import HarvestObject, HarvestObjectExtra
@@ -28,6 +30,7 @@ class DCATHarvester(HarvesterBase):
 
     _user_name = None
 
+    config = None
 
     def _get_content_and_type(self, url, harvest_job, page=1, content_type=None):
         '''
@@ -165,7 +168,57 @@ class DCATHarvester(HarvesterBase):
             Allows custom harvesters to modify the package dict before
             creating or updating the actual package.
         '''
+        tags_list = package_dict.get('tags')
+        if tags_list:
+            package_dict['tags'] = [tag for tag in tags_list if len(tag['name']) > 1]
+
+        # Set default groups if needed
+        self._set_config(harvest_object.job.source.config)
+        default_groups = self.config.get('default_groups', [])
+        if default_groups:
+            if not 'groups' in package_dict:
+                package_dict['groups'] = []
+            existing_group_ids = [g['id'] for g in package_dict['groups']]
+            package_dict['groups'].extend(
+                [{'name':g['name']} for g in self.config['default_group_dicts']
+                 if g['id'] not in existing_group_ids])
         return package_dict
+
+    def _set_config(self, config_str):
+        if config_str:
+            self.config = json.loads(config_str)
+            log.debug('Using config: %r', self.config)
+        else:
+            self.config = {}
+
+    def validate_config(self, config):
+        if not config:
+            return config
+
+        try:
+            config_obj = json.loads(config)
+            if 'default_groups' in config_obj:
+                if not isinstance(config_obj['default_groups'], list):
+                    raise ValueError('default_groups must be a *list* of group names/ids')
+                if config_obj['default_groups'] and not isinstance(config_obj['default_groups'][0], basestring):
+                    raise ValueError('default_groups must be a list of group names/ids (i.e. strings)')
+
+                # Check if default groups exist
+                context = {'model': model, 'user': p.toolkit.c.user}
+                config_obj['default_group_dicts'] = []
+                for group_name_or_id in config_obj['default_groups']:
+                    try:
+                        group = get_action('group_show')(context, {'id': group_name_or_id})
+                        # save the dict to the config object, as we'll need it
+                        # in the import_stage of every dataset
+                        config_obj['default_group_dicts'].append(group)
+                    except NotFound, e:
+                        raise ValueError('Default group not found')
+                config = json.dumps(config_obj)
+        except ValueError, e:
+            raise e
+
+        return config
 
     ## End hooks
 
