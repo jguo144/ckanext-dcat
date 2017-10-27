@@ -322,11 +322,11 @@ class DCATHarvester(HarvesterBase):
             obj = HarvestObject(guid=guid, job=harvest_job,
                                 package_id=guid_to_package_id[guid],
                                 extras=[HarvestObjectExtra(key='status', value='delete')])
-            ids.append(obj.id)
             model.Session.query(HarvestObject).\
                   filter_by(guid=guid).\
                   update({'current': False}, False)
             obj.save()
+            ids.append(obj.id)
 
 
         return ids
