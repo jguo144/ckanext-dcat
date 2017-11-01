@@ -172,8 +172,17 @@ class DCATHarvester(HarvesterBase):
         if tags_list:
             package_dict['tags'] = [tag for tag in tags_list if len(tag['name']) > 1]
 
-        # Set default groups if needed
         self._set_config(harvest_object.job.source.config)
+
+        # Set default tags if needed
+        default_tags = self.config.get('default_tags', [])
+        if default_tags:
+            if not 'tags' in package_dict:
+                package_dict['tags'] = []
+            package_dict['tags'].extend(
+                [t for t in default_tags if t not in package_dict['tags']])
+
+        # Set default groups if needed
         default_groups = self.config.get('default_groups', [])
         if default_groups:
             if not 'groups' in package_dict:
@@ -182,6 +191,26 @@ class DCATHarvester(HarvesterBase):
             package_dict['groups'].extend(
                 [{'name':g['name']} for g in self.config['default_group_dicts']
                  if g['id'] not in existing_group_ids])
+
+        # Set default extras if needed
+        default_extras = self.config.get('default_extras', {})
+        def get_extra(key, package_dict):
+            for extra in package_dict.get('extras', []):
+                if extra['key'] == key:
+                    return extra
+        if default_extras:
+            override_extras = self.config.get('override_extras', False)
+            if not 'extras' in package_dict:
+                package_dict['extras'] = []
+            for key, value in default_extras.iteritems():
+                existing_extra = get_extra(key, package_dict)
+                if existing_extra and not override_extras:
+                    continue  # no need for the default
+                if existing_extra:
+                    package_dict['extras'].remove(existing_extra)
+
+                package_dict['extras'].append({'key': key, 'value': value})
+
         return package_dict
 
     def _set_config(self, config_str):
@@ -197,6 +226,15 @@ class DCATHarvester(HarvesterBase):
 
         try:
             config_obj = json.loads(config)
+
+            if 'default_tags' in config_obj:
+                if not isinstance(config_obj['default_tags'], list):
+                    raise ValueError('default_tags must be a list')
+                if config_obj['default_tags'] and \
+                        not isinstance(config_obj['default_tags'][0], dict):
+                    raise ValueError('default_tags must be a list of '
+                                     'dictionaries')
+
             if 'default_groups' in config_obj:
                 if not isinstance(config_obj['default_groups'], list):
                     raise ValueError('default_groups must be a *list* of group names/ids')
@@ -215,6 +253,12 @@ class DCATHarvester(HarvesterBase):
                     except NotFound, e:
                         raise ValueError('Default group not found')
                 config = json.dumps(config_obj)
+
+
+            if 'default_extras' in config_obj:
+                if not isinstance(config_obj['default_extras'], dict):
+                    raise ValueError('default_extras must be a dictionary')
+
         except ValueError, e:
             raise e
 
