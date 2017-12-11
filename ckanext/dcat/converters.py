@@ -1,6 +1,9 @@
 import logging
+import mimetypes
+import re
 
 log = logging.getLogger(__name__)
+mimetypes.init()
 
 
 def dcat_to_ckan(dcat_dict):
@@ -36,11 +39,18 @@ def dcat_to_ckan(dcat_dict):
 
     package_dict['resources'] = []
     for distribution in dcat_dict.get('distribution', []):
+        format = ""
+        if distribution.get('format'):
+            format = distribution.get('format')
+        elif distribution.get('mediaType'):
+            ext = mimetypes.guess_extension(distribution.get('mediaType'))
+            if ext:
+                format = ext[1:]
         resource = {
-            'name': distribution.get('title'),
+            'name': distribution.get('title',dcat_dict.get('title')),
             'description': distribution.get('description'),
             'url': distribution.get('downloadURL') or distribution.get('accessURL'),
-            'format': distribution.get('format'),
+            'format': format,
         }
 
         if distribution.get('byteSize'):
