@@ -32,10 +32,24 @@ def dcat_to_ckan(dcat_dict):
         package_dict['extras'].append({'key': 'dcat_publisher_name', 'value': dcat_publisher.get('name')})
         package_dict['extras'].append({'key': 'dcat_publisher_email', 'value': dcat_publisher.get('mbox')})
 
-    package_dict['extras'].append({
-        'key': 'language',
-        'value': ','.join(dcat_dict.get('language', []))
-    })
+    contactPoint = dcat_dict.get('contactPoint',{})
+    contactPointEmail = contactPoint.get('hasEmail',':').split(':')[1]
+    package_dict['contact_email'] = contactPointEmail
+
+    package_dict['author'] = 'CHHS'
+    package_dict['program_web_page'] = dcat_dict.get('landingPage','')
+    package_dict['temporal_coverage'] = 'Other'
+    package_dict['geographic_granularity'] = 'other'
+    package_dict['accrual_periodicity'] = 'other'
+
+    package_dict['data_license'] = 'Terms of Use'
+    package_dict['limitations'] = 'Limitations'
+
+    #package_dict['extras'].append({
+    #    'key': 'language',
+    #    'value': ','.join(dcat_dict.get('language', []))
+    #})
+    package_dict['language'] = dcat_dict.get('language','English')
 
     package_dict['resources'] = []
     for distribution in dcat_dict.get('distribution', []):
