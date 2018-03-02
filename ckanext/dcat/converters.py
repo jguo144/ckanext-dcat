@@ -14,12 +14,30 @@ def dcat_to_ckan(dcat_dict):
     package_dict['notes'] = dcat_dict.get('description')
     package_dict['url'] = dcat_dict.get('landingPage')
 
-
     package_dict['tags'] = []
     for keyword in dcat_dict.get('keyword', []):
-        package_dict['tags'].append({'name': keyword})
+        keyword = keyword.replace('&','and')
+        if ";" in keyword:
+            split_tags = keyword.split(";")
+            for tag in split_tags:
+                tag = re.sub(ur'[^A-Za-z\u00C0-\u00D6\u00E0-\u00F6-_.0-9 ]','-',tag)
+                package_dict['tags'].append({'name': tag})
+        else:
+            keyword = re.sub(ur'[^A-Za-z\u00C0-\u00D6\u00E0-\u00F6-_.0-9 ]','-',keyword)
+            package_dict['tags'].append({'name': keyword})
 
     package_dict['extras'] = []
+    bbox = dcat_dict.get('spatial','').split(',')
+    if len(bbox) == 4:
+        point_a = "["+bbox[0]+","+bbox[1]+"]"
+        point_b = "["+bbox[0]+","+bbox[3]+"]"
+        point_c = "["+bbox[2]+","+bbox[3]+"]"
+        point_d = "["+bbox[2]+","+bbox[1]+"]"
+        coordinates = "["+point_a+","+point_b+","+point_c+","+point_d+","+point_a+"]"
+        bbox_str = "{'type':'Polygon','coordinates': ["+coordinates+"]}"
+        bbox_str = bbox_str.replace("'",'"')
+        package_dict['extras'] += [{"key":"spatial", "value":bbox_str}]
+
     for key in ['issued', 'modified']:
         package_dict['extras'].append({'key': 'dcat_{0}'.format(key), 'value': dcat_dict.get(key)})
 
@@ -32,10 +50,19 @@ def dcat_to_ckan(dcat_dict):
         package_dict['extras'].append({'key': 'dcat_publisher_name', 'value': dcat_publisher.get('name')})
         package_dict['extras'].append({'key': 'dcat_publisher_email', 'value': dcat_publisher.get('mbox')})
 
-    package_dict['extras'].append({
-        'key': 'language',
-        'value': ','.join(dcat_dict.get('language', []))
-    })
+    #package_dict['extras'].append({
+    #    'key': 'language',
+    #    'value': ','.join(dcat_dict.get('language', []))
+    #})
+    package_dict['language'] = ','.join(dcat_dict.get('language', []))
+
+    contactPoint = dcat_dict.get('contactPoint','')
+    contactPointFN = contactPoint.get('fn','')
+    package_dict['contact_name'] = contactPointFN
+    contactPointEmail = contactPoint.get('hasEmail','').split(':')[1]
+    package_dict['contact_email'] = contactPointEmail or 'None'
+
+    package_dict['public_access_level'] = 'Public'
 
     package_dict['resources'] = []
     for distribution in dcat_dict.get('distribution', []):
