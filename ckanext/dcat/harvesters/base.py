@@ -192,6 +192,41 @@ class DCATHarvester(HarvesterBase):
                 [{'name':g['name']} for g in self.config['default_group_dicts']
                  if g['id'] not in existing_group_ids])
 
+        # set default values from config
+        default_values = self.config.get('default_values',[])
+        if default_values:
+            for default_field in default_values:
+                for key in default_field:
+                    package_dict[key] = default_field[key]
+                    # Remove from extras any keys present in the config
+                    extras = [x for x in package_dict.get('extras',[]) if not (key == x.get('key'))]
+                    package_dict['extras'] = extras
+
+        # set the mapping fields its corresponding default_values
+        map_fields = self.config.get('map_fields',[])
+        if map_fields:
+            for map_field in map_fields:
+                source_field = map_field.get('source')
+                target_field = map_field.get('target')
+                default_value = map_field.get('default')
+                package_dict[target_field] = dcat_dict.get(source_field, default_value)
+                # Remove from extras any keys present in the config
+                extras =  [x for x in package_dict.get('extras',[]) if not (target_field == x.get('key'))]
+                package_dict['extras'] = extras
+
+        # set the contact point
+        contact_point_mapping = self.config.get('contact_point',[])
+        if contact_point_mapping:
+            contactPoint = dcat_dict.get('contactPoint',{})
+            if contactPoint:
+                contactPointName = contactPoint.get('fn')
+                contactPointEmail = contactPoint.get('hasEmail',':').split(':')[1]
+            for key in contact_point_mapping:
+                if contact_point_mapping[key] and key == 'name_field':
+                    package_dict[contact_point_mapping[key]] = contactPointName
+                if contact_point_mapping[key] and key == 'email_field':
+                    package_dict[contact_point_mapping[key]] = contactPointEmail
+
         # Set default extras if needed
         default_extras = self.config.get('default_extras', {})
         def get_extra(key, package_dict):
@@ -254,10 +289,14 @@ class DCATHarvester(HarvesterBase):
                         raise ValueError('Default group not found')
                 config = json.dumps(config_obj)
 
-
             if 'default_extras' in config_obj:
                 if not isinstance(config_obj['default_extras'], dict):
                     raise ValueError('default_extras must be a dictionary')
+
+            if 'organizations_filter_include' in config_obj \
+                and 'organizations_filter_exclude' in config_obj:
+                raise ValueError('Harvest configuration cannot contain both '
+                    'organizations_filter_include and organizations_filter_exclude')
 
         except ValueError, e:
             raise e
@@ -284,6 +323,7 @@ class DCATHarvester(HarvesterBase):
         guids_in_db = guid_to_package_id.keys()
         guids_in_source = []
 
+        config = self._set_config(harvest_job.source.config)
 
         # Get file contents
         url = harvest_job.source.url
@@ -325,7 +365,7 @@ class DCATHarvester(HarvesterBase):
                     if guid not in previous_guids:
 
                         if guid in guids_in_db:
-                            # Dataset needs to be udpated
+                            # Dataset needs to be updated
                             obj = HarvestObject(guid=guid, job=harvest_job,
                                             package_id=guid_to_package_id[guid],
                                             content=as_string,
